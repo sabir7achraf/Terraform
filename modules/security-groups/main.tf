@@ -1,63 +1,34 @@
-resource "aws_security_group" "control_plane" {
-  name        = "${var.project_name}-control-plane-sg"
-  description = "Security group pour le control plane EKS"
-  vpc_id      = var.vpc_id
+resource "aws_security_group" "worker_nodes_sg" {
+  name        = "worker-nodes-sg"
+  description = "Security group for EKS Worker Nodes"
+  vpc_id      = aws_vpc.eks_vpc.id
 
   ingress {
-    from_port   = 443
-    to_port     = 443
+    from_port   = 10250
+    to_port     = 10250
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [aws_vpc.eks_vpc.cidr_block]
   }
 
-  ingress {
-    from_port   = 1025
-    to_port     = 65535
-    protocol    = "tcp"
-    cidr_blocks = ["10.0.0.0/16"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "${var.project_name}-control-plane-sg"
-  }
-}
-
-resource "aws_security_group" "worker_node" {
-  name        = "${var.project_name}-worker-node-sg"
-  description = "Security group pour les nodes EKS"
-  vpc_id      = var.vpc_id
-
-  ingress {
-    from_port   = 1025
-    to_port     = 65535
-    protocol    = "tcp"
-    cidr_blocks = ["10.0.0.0/16"]
-  }
-
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
   ingress {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["0.0.0.0/0"] # Restreindre à votre IP ou un bastion host
   }
+
   ingress {
-    from_port = 0
-    to_port   = 0
-    protocol  = "-1"
-    self      = true
+    from_port   = 30000
+    to_port     = 32767
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"] # Autoriser l'ALB
+  }
+
+  ingress {
+    from_port   = 3306
+    to_port     = 3306
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.eks_vpc.cidr_block] # Autoriser l'accès à MySQL
   }
 
   egress {
@@ -68,14 +39,40 @@ resource "aws_security_group" "worker_node" {
   }
 
   tags = {
-    Name = "${var.project_name}-worker-node-sg"
+    Name = "worker-nodes-sg"
   }
 }
 
-resource "aws_security_group" "alb" {
-  name        = "${var.project_name}-alb-sg"
-  description = "Security group pour ALB"
-  vpc_id      = var.vpc_id
+# Security Group pour le Control Plane (géré par AWS)
+resource "aws_security_group" "control_plane_sg" {
+  name        = "control-plane-sg"
+  description = "Security group for EKS Control Plane"
+  vpc_id      = aws_vpc.eks_vpc.id
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.eks_vpc.cidr_block] # Autoriser les Worker Nodes
+  }
+
+  egress {
+    from_port   = 10250
+    to_port     = 10250
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.eks_vpc.cidr_block] # Autoriser les Worker Nodes
+  }
+
+  tags = {
+    Name = "control-plane-sg"
+  }
+}
+
+# Security Group pour l'ALB
+resource "aws_security_group" "alb_sg" {
+  name        = "alb-sg"
+  description = "Security group for ALB"
+  vpc_id      = aws_vpc.eks_vpc.id
 
   ingress {
     from_port   = 80
@@ -83,6 +80,7 @@ resource "aws_security_group" "alb" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
   ingress {
     from_port   = 443
     to_port     = 443
@@ -91,13 +89,31 @@ resource "aws_security_group" "alb" {
   }
 
   egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    from_port   = 30000
+    to_port     = 32767
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.eks_vpc.cidr_block] # Autoriser les Worker Nodes
   }
 
   tags = {
-    Name = "${var.project_name}-alb-sg"
+    Name = "alb-sg"
+  }
+}
+
+# Security Group pour MySQL (Amazon RDS)
+resource "aws_security_group" "mysql_sg" {
+  name        = "mysql-sg"
+  description = "Security group for MySQL"
+  vpc_id      = aws_vpc.eks_vpc.id
+
+  ingress {
+    from_port   = 3306
+    to_port     = 3306
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.eks_vpc.cidr_block] # Autoriser les Worker Nodes
+  }
+
+  tags = {
+    Name = "mysql-sg"
   }
 }
